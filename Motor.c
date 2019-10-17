@@ -43,11 +43,14 @@ int kbhit(void); //キー入力関数
 int main(){
 	int i;
 	
+	//モータを起動
 	init_pwm(0);
+	init_pwm(1);
 	
 	while(1){
-		
+		//モータを回転
 		run_pwm(0,100000,1);
+		run_pwm(1,100000,1);
 		printf("run\n");
 
 		//キー入力関数
@@ -57,8 +60,11 @@ int main(){
 		}
 	}
 
+	//モータを停止
 	run_pwm(0,0,0);
 	close_pwm(0);
+	run_pwm(1,0,0);
+	close_pwm(1);
 
 	return 0;
 }
