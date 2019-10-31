@@ -48,12 +48,18 @@ char is_riding_line(int n);	//ライントレーサの判定関数
 //モータ1番に関しては何もしていない
 int main(){
 	int i;
+	char isRide[8];
 	
 	//モータを起動
 	init_pwm(0);
 	init_pwm(1);
 	
 	while(1){
+		//ライントレーサによる判定
+		for(i=0;i<8;i++){
+			isRide[i]=is_riding_line(line_gpio_num[i]);
+		}
+
 		//モータを回転
 		run_pwm(0,100000,1);
 		run_pwm(1,100000,1);
