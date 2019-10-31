@@ -9,19 +9,24 @@
 #include <poll.h>
 #include <termios.h>
 
-//各自の使用するボードで変更
+//ボード毎の設定
 /**************************/
 #define OCP_NUM 3 //ocp.▲の▲に該当する番号
 #define PWM_PERIOD 10000000
 #define BONE_CAPEMGR_NUM 9 //bone_capemgr.●の●に該当
 /**************************/
 
-//各自の接続に応じて変更
+//モーターを使用する際の設定
 /**************************/
 char PIN_PWM[2][7]={{"P9_14"},{"P9_22"}}; //PWM有効化後の番号
 int pwm_pin_num[2]={16,16}; //PWMに使用するのBBBピン番号
-int motor_gpio_num[2][2]={{30,31},{15,14}}; //モータで使用するGPIO番号
-/*************************/
+int motor_gpio_num[2][2]={{60,61},{65,46}}; //モータで使用するGPIO番号=32×A+B(GPIO0_3→3)
+/**************************/
+
+//ライントレーサを仕様する際の設定
+/**************************/
+int line_gpio_num[1][2]={{0,0}};	//ライントレーサで使用するGPIO番号
+/**************************/
 
 void gpio_export(int n);	//gpioの有効化関数
 void gpio_unexport(int n); //gpioの有効化解除の関数
@@ -30,6 +35,7 @@ void init_pwm(int motor_num); //PWM初期化関数 motor_num=0もしくは1
 void run_pwm(int motor_num,int duty,int drive_mode); //モータ用出力関数 motor_num=0もしくは1/drive_mode 0:停止，1:正転，-1:逆転
 void close_pwm(int motor_num); //PWM終了関数
 int kbhit(void); //キー入力関数
+char is_riding_line(int n);	//ライントレーサの判定関数
 
 /*********************************/
 //init_pwm(モータ番号)を呼び出して，初期化の設定を行う，モータ番号（0～接続個数-1）
@@ -274,3 +280,13 @@ int kbhit(void){
 
     return 0;
 }
+
+//ライントレーサの判定関数
+char is_riding_line(int n){
+	char c;
+	int fd = gpio_open(gpio_number, "value", O_RDONLY);
+	read(fd, &c, 1);
+	close(fd);
+
+	return c;
+}	
