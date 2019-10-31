@@ -19,28 +19,28 @@
 //モーターを使用する際の設定
 /**************************/
 char PIN_PWM[2][7]={{"P9_14"},{"P9_22"}}; //PWM有効化後の番号
-int pwm_pin_num[2]={16,16}; //PWMに使用するのBBBピン番号
-int motor_gpio_num[2][2]={{60,61},{65,46}}; //モータで使用するGPIO番号=32×A+B(GPIO0_3→3)
+int PWM_PIN_NUM[2]={16,16}; //PWMに使用するのBBBピン番号
+int MOTOR_GPIO_NUM[2][2]={{60,61},{65,46}}; //モータで使用するGPIO番号=32×A+B(GPIO0_3→3)
 /**************************/
 
 //ライントレーサを仕様する際の設定
 /**************************/
-int line_gpio_num[8]={30,48,3,49,115,27,47,45};	//ライントレーサで使用するGPIO番号
+int LINE_GPIO_NUM[8]={30,48,3,49,115,27,47,45};	//ライントレーサで使用するGPIO番号
 /**************************/
 
-void gpio_export(int n);	//gpioの有効化関数
-void gpio_unexport(int n); //gpioの有効化解除の関数
-int gpio_open(int n, char *file, int flag);	//gpioの設定ファイルを開く関数
-void init_pwm(int motor_num); //PWM初期化関数 motor_num=0もしくは1
-void run_pwm(int motor_num,int duty,int drive_mode); //モータ用出力関数 motor_num=0もしくは1/drive_mode 0:停止，1:正転，-1:逆転
-void close_pwm(int motor_num); //PWM終了関数
+void gpioExport(int n);	//gpioの有効化関数
+void gpioUnexport(int n); //gpioの有効化解除の関数
+int gpioOpen(int n, char *file, int flag);	//gpioの設定ファイルを開く関数
+void initPwm(int motorNum); //PWM初期化関数 motorNum=0もしくは1
+void runPwm(int motorNum,int duty,int driveMode); //モータ用出力関数 motorNum=0もしくは1/driveMode 0:停止，1:正転，-1:逆転
+void closePwm(int motorNum); //PWM終了関数
 int kbhit(void); //キー入力関数
-char is_riding_line(int n);	//ライントレーサの判定関数
+char isRidingLine(int n);	//ライントレーサの判定関数
 
 /*********************************/
-//init_pwm(モータ番号)を呼び出して，初期化の設定を行う，モータ番号（0～接続個数-1）
-//run_pwm(int motor_num,int duty,int drive_mode)を呼びだして動かす．motor_num：モータ番号/duty：整数値/drive_mode：停止，正転，逆転
-//close_pwm(モータ番号)を呼び出して，終了の処理を実施
+//initPwm(モータ番号)を呼び出して，初期化の設定を行う，モータ番号（0～接続個数-1）
+//runPwm(int motorNum,int duty,int driveMode)を呼びだして動かす．motorNum：モータ番号/duty：整数値/driveMode：停止，正転，逆転
+//closePwm(モータ番号)を呼び出して，終了の処理を実施
 /*********************************/
 
 
@@ -51,18 +51,18 @@ int main(){
 	char isRide[8];
 	
 	//モータを起動
-	init_pwm(0);
-	init_pwm(1);
+	initPwm(0);
+	initPwm(1);
 	
 	while(1){
 		//ライントレーサによる判定
 		for(i=0;i<8;i++){
-			isRide[i]=is_riding_line(line_gpio_num[i]);
+			isRide[i]=isRidingLine(LINE_GPIO_NUM[i]);
 		}
 
 		//モータを回転
-		run_pwm(0,100000,1);
-		run_pwm(1,100000,1);
+		runPwm(0,100000,1);
+		runPwm(1,100000,1);
 		printf("run\n");
 
 		//キー入力関数
@@ -73,27 +73,27 @@ int main(){
 	}
 
 	//モータを停止
-	run_pwm(0,0,0);
-	close_pwm(0);
-	run_pwm(1,0,0);
-	close_pwm(1);
+	runPwm(0,0,0);
+	closePwm(0);
+	runPwm(1,0,0);
+	closePwm(1);
 
 	return 0;
 }
 
 //PWM初期化関数
-void init_pwm(int motor_num){
+void initPwm(int motorNum){
 	int i,fd;
 	char path[60],path3[60],path4[60];
 	FILE *fp;
 	for(i=0;i<2;i++){
-		gpio_export(motor_gpio_num[motor_num][i]);
+		gpioExport(MOTOR_GPIO_NUM[motorNum][i]);
 		
-		fd=gpio_open(motor_gpio_num[motor_num][i], "direction", O_WRONLY);
+		fd=gpioOpen(MOTOR_GPIO_NUM[motorNum][i], "direction", O_WRONLY);
 		write(fd, "out", 3);
 		close(fd);
 
-		sprintf(path3, "/sys/class/gpio/gpio%d/value", motor_gpio_num[motor_num][i]);
+		sprintf(path3, "/sys/class/gpio/gpio%d/value", MOTOR_GPIO_NUM[motorNum][i]);
 		fp = fopen(path3, "w");
 		fprintf(fp, "%d", 0);
 		fclose(fp);
@@ -107,38 +107,38 @@ void init_pwm(int motor_num){
 	fclose(fp);
 
 	/*ピンの設定（PIN_PWM指定のピン）*/
-	sprintf(path, "bone_pwm_%s",PIN_PWM[motor_num]);
+	sprintf(path, "bone_pwm_%s",PIN_PWM[motorNum]);
 	sprintf(path4, "/sys/devices/bone_capemgr.%d/slots", BONE_CAPEMGR_NUM);
 	fp = fopen(path4,"w");
 	fprintf(fp, path);
 	fclose(fp);
 
 	/*安全のため，PWM出力の停止*/
-	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/run",OCP_NUM, PIN_PWM[motor_num], pwm_pin_num[motor_num]);
+	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/run",OCP_NUM, PIN_PWM[motorNum], PWM_PIN_NUM[motorNum]);
 	fp = fopen(path, "wb");
 	fprintf(fp, "%d", 0);
 	fclose(fp);
 
 	/*PWM周期の設定*/
-	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/period",OCP_NUM, PIN_PWM[motor_num], pwm_pin_num[motor_num]);
+	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/period",OCP_NUM, PIN_PWM[motorNum], PWM_PIN_NUM[motorNum]);
 	fp = fopen(path, "wb");
 	fprintf(fp, "%d", PWM_PERIOD);
 	fclose(fp);
 
 	/*PWM極性の設定*/
-	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/polarity",OCP_NUM, PIN_PWM[motor_num], pwm_pin_num[motor_num]);
+	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/polarity",OCP_NUM, PIN_PWM[motorNum], PWM_PIN_NUM[motorNum]);
 	fp=fopen(path, "wb");
 	fprintf(fp, "%d", 0);
 	fclose(fp);
 
 	/*PWM　ON状態時間の初期化*/
-	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/duty",OCP_NUM, PIN_PWM[motor_num], pwm_pin_num[motor_num]);
+	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/duty",OCP_NUM, PIN_PWM[motorNum], PWM_PIN_NUM[motorNum]);
 	fp=fopen(path, "wb");
 	fprintf(fp, "%d", 0);
 	fclose(fp);
 
 	/*PWM出力の開始*/
-	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/run",OCP_NUM, PIN_PWM[motor_num], pwm_pin_num[motor_num]);
+	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/run",OCP_NUM, PIN_PWM[motorNum], PWM_PIN_NUM[motorNum]);
 	fp=fopen(path, "wb");
 	fprintf(fp, "%d", 1);
 	fclose(fp);
@@ -146,39 +146,39 @@ void init_pwm(int motor_num){
 }
 
 //PWM終了関数
-void close_pwm(int motor_num){
+void closePwm(int motorNum){
 	FILE *fp;
 	char path[60];
 	int i;
 	
 	/*PWM　duty0出力*/
-	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/duty",OCP_NUM, PIN_PWM[motor_num], pwm_pin_num[motor_num]);
+	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/duty",OCP_NUM, PIN_PWM[motorNum], PWM_PIN_NUM[motorNum]);
 	fp=fopen(path, "wb");
 	fprintf(fp, "%d", 0);
 	fclose(fp);
 	
 	/*PWM出力の停止*/
-	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/run",OCP_NUM, PIN_PWM[motor_num], pwm_pin_num[motor_num]);
+	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/run",OCP_NUM, PIN_PWM[motorNum], PWM_PIN_NUM[motorNum]);
 	fp=fopen(path, "wb");
 	fprintf(fp, "%d", 0);
 	fclose(fp);
 
 	//GPIOの解放
 	for(i=0;i<2;i++){
-		gpio_unexport(motor_gpio_num[motor_num][i]);
+		gpioUnexport(MOTOR_GPIO_NUM[motorNum][i]);
 	}
 }
 
 //モータ用出力関数
-void run_pwm(int motor_num,int duty,int drive_mode){
+void runPwm(int motorNum,int duty,int driveMode){
 	int i;
 	char path[60],path3[60];
 	FILE *fp;
 
 	//一時停止
-	if(drive_mode==0){
+	if(driveMode==0){
 		for(i=0;i<2;i++){
-			sprintf(path3, "/sys/class/gpio/gpio%d/value", motor_gpio_num[motor_num][i]);
+			sprintf(path3, "/sys/class/gpio/gpio%d/value", MOTOR_GPIO_NUM[motorNum][i]);
 			fp = fopen(path3, "w");
 			fprintf(fp, "%d", 1);
 			fclose(fp);
@@ -186,9 +186,9 @@ void run_pwm(int motor_num,int duty,int drive_mode){
 	}
 	
 	//モータ正転
-	else if(drive_mode==1){
+	else if(driveMode==1){
 		for(i=0;i<2;i++){
-			sprintf(path3, "/sys/class/gpio/gpio%d/value", motor_gpio_num[motor_num][i]);
+			sprintf(path3, "/sys/class/gpio/gpio%d/value", MOTOR_GPIO_NUM[motorNum][i]);
 			fp = fopen(path3, "w");
 			if(i==0){
 				fprintf(fp, "%d", 1);
@@ -203,9 +203,9 @@ void run_pwm(int motor_num,int duty,int drive_mode){
 	}
 
 	//モータ逆転
-	else if(drive_mode==-1){
+	else if(driveMode==-1){
 		for(i=0;i<2;i++){
-			sprintf(path3, "/sys/class/gpio/gpio%d/value", motor_gpio_num[motor_num][i]);
+			sprintf(path3, "/sys/class/gpio/gpio%d/value", MOTOR_GPIO_NUM[motorNum][i]);
 			fp = fopen(path3, "w");
 			if(i==0){
 				fprintf(fp, "%d", 0);
@@ -219,7 +219,7 @@ void run_pwm(int motor_num,int duty,int drive_mode){
 	}
 
 	//入力したdutyでPWM信号を出力
-	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/duty",OCP_NUM, PIN_PWM[motor_num], pwm_pin_num[motor_num]);
+	sprintf(path, "/sys/devices/ocp.%d/pwm_test_%s.%d/duty",OCP_NUM, PIN_PWM[motorNum], PWM_PIN_NUM[motorNum]);
 	fp=fopen(path, "wb");
 	fprintf(fp, "%d", duty);
 	fclose(fp);
@@ -228,7 +228,7 @@ void run_pwm(int motor_num,int duty,int drive_mode){
 
 
 //gpioの有効化関数
-void gpio_export(int n){
+void gpioExport(int n){
 	int fd;
 	char buf[40];
 
@@ -240,7 +240,7 @@ void gpio_export(int n){
 }
 
 //gpioの有効化解除の関数
-void gpio_unexport(int n){
+void gpioUnexport(int n){
 	int fd;
 	char buf[40];
 
@@ -252,7 +252,7 @@ void gpio_unexport(int n){
 }
 
 //gpioの設定ファイルを開く関数
-int gpio_open(int n, char *file, int flag){
+int gpioOpen(int n, char *file, int flag){
 	int fd;
 	char buf[40];
 
@@ -288,9 +288,9 @@ int kbhit(void){
 }
 
 //ライントレーサの判定関数
-char is_riding_line(int n){
+char isRidingLine(int n){
 	char c;
-	int fd = gpio_open(gpio_number, "value", O_RDONLY);
+	int fd = gpioOpen(gpio_number, "value", O_RDONLY);
 	read(fd, &c, 1);
 	close(fd);
 
