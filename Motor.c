@@ -60,6 +60,26 @@ int main(){
 			isRide[i]=isRidingLine(LINE_GPIO_NUM[i]);
 		}
 
+		//行動決定
+		if(isRide[3]==1 && isRide[4]==1){
+			//前進
+			runPwm(0,100000,1);
+			runPwm(1,100000,1);
+			printf("run\n");
+		}
+		else if(isRide[0]==1 && isRide[1]==1 && isRide[2]==1 && isRide[3]==1){
+			//右旋回
+			runPwm(0,100000,-1);
+			runPwm(1,100000,1);
+			printf("right\n");
+		}
+		else if(isRide[4]==1 && isRide[5]==1 && isRide[6]==1 && isRide[7]==1){
+			//左旋回
+			runPwm(0,100000,1);
+			runPwm(1,100000,-1);
+			printf("left\n");
+		}
+
 		//モータを回転
 		runPwm(0,100000,1);
 		runPwm(1,100000,1);
