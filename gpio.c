@@ -1,4 +1,13 @@
-#include "gpio.h"
+#include <stdio.h>
+#include <unistd.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <poll.h>
+#include <termios.h>
 
 //gpioの有効化関数
 void gpioExport(int n){
