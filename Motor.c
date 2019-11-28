@@ -62,37 +62,46 @@ int main(){
 		}
 
 		//行動決定
-		if(isTurn==1){	//右旋回
+		//右旋回
+		if(isTurn==1){
 			MoveRight();
 			if(isRide[3] && isRide[4]==1){
-				isTurn==0;
+				isTurn=0;
 			}
 		}
-		else if(isTurn==-1){	//左旋回
+		//左旋回
+		else if(isTurn==-1){
 			MoveLeft();
 			if(isRide[3] && isRide[4]==1){
-				isTurn==0;
+				isTurn=0;
 			}
 		}
-		else if(isRide[1]==1 && isRide[2]==1 && isRide[3]==1){
-			if(isRide[0]==1){
+		//右2つ反応
+		else if(isRide[4]==1 && isRide[5]==1){
+			//右側4つ反応→右旋回
+			if(isRide[3]==1 && isRide[6]==1){
+				MoveRight();
+				isTurn=1;
+			}
+			//道から外れていれば左旋回
+			else{
 				MoveLeft();		//左
+			}
+		}
+		//真ん中2つ反応→前進
+		else if(isRide[3]==1 && isRide[4]==1){
+			MoveStraight();
+		}
+		//左2つ反応
+		else if(isRide[2]==1 && isRide[3]==1){
+			//左側4つ反応→左旋回
+			if(isRide[1]==1 && isRide[4]==1){
+				MoveLeft();
 				isTurn=-1;
 			}
+			//道から外れていれば右旋回
 			else{
 				MoveRight();	//右
-			}
-		}
-		else if(isRide[3]==1 && isRide[4]==1){
-			MoveStraight();		//前
-		}
-		else if(isRide[4]==1 && isRide[5]==1 && isRide[6]==1){
-			if(isRide[7]==1){
-				MoveRight();	//右
-				isTurn==1;
-			}
-			else{
-				MoveLeft();		//左
 			}
 		}
 		else{
