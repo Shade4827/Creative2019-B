@@ -12,15 +12,24 @@
 #include <poll.h>
 #include <termios.h>
 #include "gpio.h"
+#include "pwm.h"
 
-//ボード毎の設定
+#define RIGHT1 10000000	//右旋回
+#define RIGHT2 100000	//左旋回
+#define LEFT1 100000	//右旋回
+#define LEFT2 10000000	//左旋回
+
+//モード変更の設定
 /**************************/
-#define OCP_NUM 3 //ocp.▲の▲に該当する番号
-#define PWM_PERIOD 10000000
-#define BONE_CAPEMGR_NUM 9 //bone_capemgr.●の●に該当
+int MODE_GPIO_NUM[2]={26,44};
 /**************************/
 
-//ライントレーサを仕様する際の設定
+//超音波センサの設定
+/**************************/
+int SENSOR_GPIO_NUM=20;
+/**************************/
+
+//ライントレーサを使用する際の設定
 /**************************/
 int LINE_GPIO_NUM[8]={30,48,3,49,115,27,47,45};	//ライントレーサで使用するGPIO番号
 /**************************/
@@ -39,7 +48,8 @@ char isRidingLine(int n);	//ライントレーサの判定関数
 //モータ1番に関しては何もしていない
 int main(){
 	int i;
-	char isRide[8];
+	char isRide[8];	//0:乗っていない 1:乗っている
+	char isTurn=0;	//0:旋回しない 1:右旋回 -1:左旋回
 	
 	//モータを起動
 	initPwm(0);
@@ -52,35 +62,41 @@ int main(){
 		}
 
 		//行動決定
-		if(isRide[0]==1 && isRide[1]==1 && isRide[2]==1 && isRide[3]==1){
-			//右旋回
-			runPwm(0,100000,-1);
-			runPwm(1,100000,1);
-			printf("right\n");
+		if(isTurn==1){	//右旋回
+			MoveRight();
+			if(isRide[3] && isRide[4]==1){
+				isTurn==0;
+			}
 		}
-		else if(isRide[4]==1 && isRide[5]==1 && isRide[6]==1 && isRide[7]==1){
-			//左旋回
-			runPwm(0,100000,1);
-			runPwm(1,100000,-1);
-			printf("left\n");
+		else if(isTurn==-1){	//左旋回
+			MoveLeft();
+			if(isRide[3] && isRide[4]==1){
+				isTurn==0;
+			}
+		}
+		else if(isRide[1]==1 && isRide[2]==1 && isRide[3]==1){
+			if(isRide[0]==1){
+				MoveLeft();		//左
+				isTurn=-1;
+			}
+			else{
+				MoveRight();	//右
+			}
 		}
 		else if(isRide[3]==1 && isRide[4]==1){
-			//前進
-			runPwm(0,100000,1);
-			runPwm(1,100000,1);
-			printf("run\n");
+			MoveStraight();		//前
 		}
-		else {}
-
-		//モータを回転
-		runPwm(0,100000,1);
-		runPwm(1,100000,1);
-		printf("run\n");
-
-		//キー入力関数
-		if(kbhit()) {
-			if(getchar()=='q')	//「q」で終了
-				break;
+		else if(isRide[4]==1 && isRide[5]==1 && isRide[6]==1){
+			if(isRide[7]==1){
+				MoveRight();	//右
+				isTurn==1;
+			}
+			else{
+				MoveLeft();		//左
+			}
+		}
+		else{
+			MoveStraight();
 		}
 	}
 
@@ -93,31 +109,6 @@ int main(){
 	return 0;
 }
 
-int kbhit(void){
-	struct termios oldt, newt;
-	int ch;
-	int oldf;
-
-	tcgetattr(STDIN_FILENO, &oldt);
-    newt = oldt;
-    newt.c_lflag &= ~(ICANON | ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-    oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
-
-    ch = getchar();
-
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-    fcntl(STDIN_FILENO, F_SETFL, oldf);
-
-    if (ch != EOF) {
-        ungetc(ch, stdin);
-        return 1;
-    }
-
-    return 0;
-}
-
 //ライントレーサの判定関数
 char isRidingLine(int n){
 	char c;
@@ -126,4 +117,25 @@ char isRidingLine(int n){
 	close(fd);
 
 	return c;
-}	
+}
+
+void MoveRight(){
+	//右旋回
+	runPwm(0,RIGHT1,1);
+	runPwm(1,LEFT1,1);
+	printf("right\n");
+}
+
+void MoveLeft(){
+	//左旋回
+	runPwm(0,RIGHT2,1);
+	runPwm(1,LEFT2,1);
+	printf("left\n");
+}
+
+void MoveStraight(){
+	//前進
+	runPwm(0,RIGHT1,1);
+	runPwm(1,LEFT2,1);
+	printf("run\n");
+}
