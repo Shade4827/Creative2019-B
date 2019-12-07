@@ -16,6 +16,13 @@
 #define BONE_CAPEMGR_NUM 9 //bone_capemgr.●の●に該当
 /**************************/
 
+//モーターを使用する際の設定
+/**************************/
+char PIN_PWM[2][7]={{"P9_14"},{"P9_22"}}; //PWM有効化後の番号
+int PWM_PIN_NUM[2]={15,16}; //PWMに使用するのBBBピン番号
+int MOTOR_GPIO_NUM[2][2]={{61,60},{65,46}}; //モータで使用するGPIO番号=32×A+B(GPIO0_3→3)
+/**************************/
+
 //PWM初期化関数
 void initPwm(int motorNum){
 	int i,fd;

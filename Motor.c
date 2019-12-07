@@ -22,6 +22,7 @@
 //モード変更の設定
 /**************************/
 int MODE_GPIO_NUM[2]={26,44};
+char SwitchMode();
 /**************************/
 
 //超音波センサの設定
@@ -32,10 +33,15 @@ int SENSOR_GPIO_NUM=20;
 //ライントレーサを使用する際の設定
 /**************************/
 int LINE_GPIO_NUM[8]={30,48,3,49,115,27,47,45};	//ライントレーサで使用するGPIO番号
+char isRidingLine(int);	//ライントレーサの判定
 /**************************/
 
 int kbhit(void); //キー入力関数
-char isRidingLine(int n);	//ライントレーサの判定関数
+char isRidingLine(int);	//ライントレーサの判定関数
+
+void MoveRight();	//右旋回
+void MoveLeft();	//左旋回
+void MoveStraight();	//直進
 
 /*********************************/
 //initPwm(モータ番号)を呼び出して，初期化の設定を行う，モータ番号（0～接続個数-1）
@@ -50,6 +56,7 @@ int main(){
 	int i;
 	char isRide[8];	//0:乗っていない 1:乗っている
 	char isTurn=0;	//0:旋回しない 1:右旋回 -1:左旋回
+	char mode=SwitchMode();	//攻守のモード 0:攻撃 1:防衛
 	
 	//モータを起動
 	initPwm(0);
@@ -118,8 +125,13 @@ int main(){
 	return 0;
 }
 
+//攻守切替
+char SwitchMode(){
+	
+}
+
 //ライントレーサの判定関数
-char isRidingLine(int n){
+char isRidingLine(int gpio_number){
 	char c;
 	int fd = gpioOpen(gpio_number, "value", O_RDONLY);
 	read(fd, &c, 1);
