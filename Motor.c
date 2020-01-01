@@ -14,10 +14,11 @@
 #include "gpio.h"
 #include "pwm.h"
 
-#define RIGHT1 10000000	//右旋回
-#define RIGHT2 100000	//左旋回
-#define LEFT1 100000	//右旋回
-#define LEFT2 10000000	//左旋回
+//右:左=100:78
+#define RIGHT1 100000	//右旋回
+#define RIGHT2 1000	//左旋回
+#define LEFT1 1000	//右旋回
+#define LEFT2 100000	//左旋回
 
 //モード変更の設定
 /**************************/
@@ -54,7 +55,7 @@ void MoveStraight();	//直進
 //モータ1番に関しては何もしていない
 int main(){
 	int i;
-	char isRide[8];	//0:乗っていない 1:乗っている
+	char isRide[8];	//0:白 1:黒
 	char isTurn=0;	//0:旋回しない 1:右旋回 -1:左旋回
 	char mode=SwitchMode();	//攻守のモード 0:攻撃 1:防衛
 	
@@ -66,7 +67,9 @@ int main(){
 		//ライントレーサによる判定
 		for(i=0;i<8;i++){
 			isRide[i]=isRidingLine(LINE_GPIO_NUM[i]);
+			printf("%d ",isRide[i]);
 		}
+		printf("\n");
 
 		//行動決定
 		//右旋回
@@ -142,21 +145,21 @@ char isRidingLine(int gpio_number){
 
 void MoveRight(){
 	//右旋回
-	runPwm(0,RIGHT1,1);
-	runPwm(1,LEFT1,1);
+	runPwm(0,LEFT1,1);
+	runPwm(1,RIGHT1,1);
 	printf("right\n");
 }
 
 void MoveLeft(){
 	//左旋回
-	runPwm(0,RIGHT2,1);
-	runPwm(1,LEFT2,1);
+	runPwm(0,LEFT2,1);
+	runPwm(1,RIGHT2,1);
 	printf("left\n");
 }
 
 void MoveStraight(){
 	//前進
-	runPwm(0,RIGHT1,1);
-	runPwm(1,LEFT2,1);
+	runPwm(0,LEFT1,1);
+	runPwm(1,RIGHT2,1);
 	printf("run\n");
 }
