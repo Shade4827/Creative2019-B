@@ -21,7 +21,8 @@
 //モード変更
 /**************************/
 int MODE_GPIO_NUM[2]={26,44};
-char SwitchMode();
+char SwitchMode();	//モード切替
+void OutputCurrent();	//電流出力時の設定
 /**************************/
 
 //PWM
@@ -53,8 +54,6 @@ int SENSOR_GPIO_NUM=20;
 /**************************/
 int LINE_GPIO_NUM[8]={49,115,3,27,48,47,30,45};	//ライントレーサで使用するGPIO番号
 void isRidingLine(char[],int);	//ライントレーサの判定
-void setLineGPIO(int);	//ライントレーサのGPIOをセットする
-void unsetLineGOUI(int);	//ライントレーサのGPIOをアンセットする
 /**************************/
 
 //移動関数
@@ -64,15 +63,6 @@ void MoveLeft();	//左旋回
 void MoveStraight();	//直進
 /**************************/
 
-/*********************************/
-//initPwm(モータ番号)を呼び出して，初期化の設定を行う，モータ番号（0～接続個数-1）
-//runPwm(int motorNum,int duty,int driveMode)を呼びだして動かす．motorNum：モータ番号/duty：整数値/driveMode：停止，正転，逆転
-//closePwm(モータ番号)を呼び出して，終了の処理を実施
-/*********************************/
-
-
-//このプログラムは，モータ0番が常に停止している状態
-//モータ1番に関しては何もしていない
 int main(){
 	int i,n=8;
 	char isRide[8];	//0:乗っていない 1:乗っている
@@ -82,8 +72,11 @@ int main(){
 	initPwm(0);
 	initPwm(1);
 
-	setLineGPIO(n);
-	
+	//GPIOをセット
+	for(i=0;i<8;i++){
+		gpioExport(LINE_GPIO_NUM[i]);
+	}
+
 	for(i=0;i<2;i++){
 		gpioExport(MODE_GPIO_NUM[i]);
 	}
@@ -166,7 +159,56 @@ int main(){
 /* モード変更 */
 //攻守切替
 char SwitchMode(){
-	
+	int i,fd;
+	char path[60],mode=0;
+	FILE *fp;
+
+	//出力側を設定
+	fd=gpioOpen(MODE_GPIO_NUM[0], "direction", O_WRONLY);
+	write(fd, "out", 3);
+	close(fd);
+
+	sprintf(path, "/sys/class/gpio/gpio%d/value", MODE_GPIO_NUM[0]);
+	fp = fopen(path, "w");
+	fprintf(fp, "%d", 0);
+	fclose(fp);
+
+	//入力側を設定
+	fd = gpio_open(MODE_GPIO_NUM[1], "value", O_RDONLY);
+	read(fd, &mode, 1);
+	close(fd);
+
+	for(i=0;i<2;i++){
+		gpioUnexport(MODE_GPIO_NUM[i]);
+	}
+
+	return mode;
+}
+
+//電流出力時の設定
+void OutputCurrent(){
+	int i,fd;
+	char path[60];
+	FILE *fp;
+
+	for(i=0;i<2;i++){
+		gpioExport(MODE_GPIO_NUM[i]);	
+	}
+
+	//出力側を設定
+	fd=gpioOpen(MODE_GPIO_NUM[0], "direction", O_WRONLY);
+	write(fd, "out", 3);
+	close(fd);
+
+	sprintf(path, "/sys/class/gpio/gpio%d/value", MODE_GPIO_NUM[0]);
+	fp = fopen(path, "w");
+	fprintf(fp, "%d", 1);
+	fclose(fp);
+
+	//入力側を設定
+	fd=gpioOpen(MODE_GPIO_NUM[0], "direction", O_WRONLY);
+	write(fd, "in", 3);
+	close(fd);
 }
 
 /* PWM */
@@ -175,6 +217,7 @@ void initPwm(int motorNum){
 	int i,fd;
 	char path[60],path3[60],path4[60];
 	FILE *fp;
+
 	for(i=0;i<2;i++){
 		gpioExport(MOTOR_GPIO_NUM[motorNum][i]);
 		
@@ -360,22 +403,6 @@ void isRidingLine(char c[],int n){
 		fd = gpioOpen(LINE_GPIO_NUM[i], "value", O_RDONLY);
 		read(fd, &c[i], 1);
 		close(fd);
-	}
-}
-
-//ライントレーサのGPIOをセットする
-void setLineGPIO(int n){
-	int i;
-	for(i=0;i<n;i++){
-		gpioExport(LINE_GPIO_NUM[i]);
-	}
-}
-
-//ライントレーサのGPIOをアンセットする
-void unsetLineGOUI(int n){
-	int i;
-	for(i=0;i<n;i++){
-		gpioUnexport(LINE_GPIO_NUM[i]);
 	}
 }
 
