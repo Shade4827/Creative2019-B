@@ -15,9 +15,8 @@
 
 //モード変更
 /**************************/
-int MODE_GPIO_NUM[2]={26,44};
-char SwitchMode();	//モード切替
-void OutputCurrent(double);	//電流出力時の設定
+int MODE_GPIO_NUM=26;
+int SwitchMode(struct pollfd*);	//モード切替
 void AttackMode(char[],int*);	//攻撃側の行動関数
 void DeffenceMode(char[],int*,int*,clock_t*);	//防衛側の行動関数
 int IsProgress(double,clock_t*);	//時間経過を判定する関数
@@ -46,6 +45,8 @@ int GpioOpen(int, char*, int);	//gpioの設定ファイルを開く関数
 //超音波センサ
 /**************************/
 int SENSOR_GPIO_NUM=20;
+void SetSensorGpio(struct pollfd*);	//超音波センサ用のGPIOを有効化
+void SoundSensor(int,struct pollfd*);	//超音波センサの動作関数
 /**************************/
 
 //ライントレーサ
@@ -69,27 +70,32 @@ void Stop();	//停止
 /**************************/
 
 int main(){
+	int fd;
 	int i,lineNum=7;
 	char isRide[7];	//'0':白 '1':黒 7番:旋回フラグ 8番:後退フラグ
 	int movingMode=0;	//0:旋回しない 1:右旋回 -1:左旋回 2:攻撃→後退 防衛→スルー
 	int startFlag=1;	//発射時のフラグ
 	int count=0;	//防衛時行動管理変数
 	clock_t start;
+	struct pollfd pfd;
 	
 	//モータを起動
 	InitPwm(0);
 	InitPwm(1);
 
-	//GPIOをセット
+	//GPIOを有効化
 	for(i=0;i<8;i++){
 		GpioExport(LINE_GPIO_NUM[i]);
 	}
-	/* 攻守切り替え部分(スイッチ取り付け後使用)
-	OutputCurrent(n);	//電流出力(n秒間)
 
-	int mode=SwitchMode();	//攻守のモード 0:攻撃 1:防衛
+	/* 攻守切り替え部分
+	int mode=SwitchMode(&pfd);	//攻守のモード 0:攻撃 1:防衛
 	*/
+
 	int mode=0;
+
+	//超音波センサのGPIOを有効化
+	SetSensorGpio(&pfd);
 
 	while(1){
 		//ライントレーサによる判定
@@ -100,12 +106,13 @@ int main(){
 		}
 		printf("\n");
 
+		SoundSensor(fd,&pfd);
+
 		//色付きマスから前進して抜け出す
 		if(startFlag==1){
 			MoveStraight();
-			if(isRide[0]=='1' && isRide[1]=='1' && isRide[2]=='1' &&
-				isRide[3]=='0' && isRide[4]=='0' &&
-				isRide[5]=='1' && isRide[6]=='1' && isRide[7]=='1'){
+			if(isRide[0]=='1' && isRide[1]=='1' && isRide[2]=='1' && isRide[3]=='0' 
+				&& isRide[4]=='0' && isRide[5]=='1' && isRide[6]=='1'){
 				startFlag=0;
 				printf("change\n");
 			}
@@ -130,59 +137,40 @@ int main(){
 
 /* モード変更 */
 //攻守切替
-char SwitchMode(){
-	int i,fd;
-	char path[60],mode=0;
-	FILE *fp;
+int SwitchMode(struct pollfd *pfd){
+	int fd,org,mode;
+	char path[60];
 
-	//出力側を設定
-	fd=GpioOpen(MODE_GPIO_NUM[0], "direction", O_WRONLY);
-	write(fd, "out", 3);
+	GpioExport(MODE_GPIO_NUM);
+
+	//出力を設定
+	fd=GpioOpen(MODE_GPIO_NUM, "direction", O_WRONLY);
+	write(fd, "in", 2);
 	close(fd);
 
-	sprintf(path, "/sys/class/gpio/gpio%d/value", MODE_GPIO_NUM[0]);
-	fp = fopen(path, "w");
-	fprintf(fp, "%d", 0);
-	fclose(fp);
+	fd=gpio_open(MODE_GPIO_NUM,"value",O_WRONLY);
+    write(fd,"both",4);
+    close(fd);
 
-	//入力側を設定
-	fd = GpioOpen(MODE_GPIO_NUM[1], "value", O_RDONLY);
-	read(fd, &mode, 1);
-	close(fd);
+    fd=gpio_open(MODE_GPIO_NUM,"value",O_WRONLY);
+    *pfd->fd=fd;
+    *pfd->events=POLLPRI;
 
-	for(i=0;i<2;i++){
-		GpioUnexport(MODE_GPIO_NUM[i]);
-	}
+	org=poll(pfd,1,10000);
+
+    while(1){
+        lseek(fd,0,SEEK_SET);
+        mode=poll(pfd,1,10000);
+
+		if(mode!=org){
+			GpioUnexport(MODE_GPIO_NUM);
+			break;
+		}
+        
+        read(fd,&mode,1);
+    }
 
 	return mode;
-}
-
-//電流出力時の設定
-void OutputCurrent(double time){
-	int i,fd;
-	char path[60];
-	FILE *fp;
-
-	for(i=0;i<2;i++){
-		GpioExport(MODE_GPIO_NUM[i]);	
-	}
-
-	//出力側を設定
-	fd=GpioOpen(MODE_GPIO_NUM[0], "direction", O_WRONLY);
-	write(fd, "out", 3);
-	close(fd);
-
-	sprintf(path, "/sys/class/gpio/gpio%d/value", MODE_GPIO_NUM[0]);
-	fp = fopen(path, "w");
-	fprintf(fp, "%d", 1);
-	fclose(fp);
-
-	//入力側を設定
-	fd=GpioOpen(MODE_GPIO_NUM[0], "direction", O_WRONLY);
-	write(fd, "in", 3);
-	close(fd);
-
-	sleep(time);	//time秒間停止
 }
 
 //攻撃側の行動関数
@@ -190,7 +178,7 @@ void AttackMode(char isRide[],int *movingMode){
 	//後退
 	if(*movingMode==2){
 		MoveBack();
-		if(isRide[5]=='0' && isRide[7]=='0'){
+		if(isRide[5]=='0' && isRide[6]=='0'){
 			*movingMode=0;
 		}
 		printf("back\n");
@@ -212,24 +200,23 @@ void AttackMode(char isRide[],int *movingMode){
 		printf("turning L\n");
 	}
 	//反応なし→後退
-	if(isRide[0]=='1' && isRide[1]=='1' && isRide[2]=='1' &&
-		isRide[3]=='1' && isRide[4]=='1' &&
-		isRide[5]=='1' && isRide[6]=='1' && isRide[7]=='1'){
+	if(isRide[0]=='1' && isRide[1]=='1' && isRide[2]=='1' && isRide[3]=='1'
+		&& isRide[4]=='1' && isRide[5]=='1' && isRide[6]=='1'){
 		MoveBack();
 		printf("back\n");
 	}
 	//右側3つ反応→右旋回
-	else if(isRide[4]=='0' && isRide[5]=='0' && isRide[7]=='0'){
+	else if(isRide[4]=='0' && isRide[5]=='0' && isRide[6]=='0'){
 		MoveRight();
 		*movingMode=1;
 		printf("turn R1\n");
 	}
-	//道から外れていれば修正
-	else if(isRide[4]=='0' && isRide[5]=='0' && isRide[6]=='1'){
+	//道から外れていれば右に修正
+	else if(isRide[4]=='0' && isRide[5]=='0'){
 		MoveRight();
 		printf("turn R2\n");
 	}
-	//道から外れていれば修正
+	//道から外れていれば左に修正
 	else if(isRide[1]=='1' && isRide[2]=='0' && isRide[3]=='0'){
 		MoveLeft();
 		printf("turn L2\n");
@@ -278,38 +265,35 @@ void DeffenceMode(char isRide[],int *movingMode,int *count,clock_t *start){
 			count+=IsProgress(2.0,start);
 		}
 	}
-	//左2つ反応
-	else if(isRide[2]=='0' && isRide[3]=='0'){
-		//左側4つ反応→左旋回
+	//左側3つ反応→左旋回
+	else if(isRide[0]=='0' && isRide[2]=='0' && isRide[3]=='0'){
+		//4回目ならばスルー
 		if(*count==4){
 			*movingMode=2;
 		}
-		else if(isRide[0]=='0'){
+		else{
 			MoveLeft();
 			*movingMode=-1;
 			*start=clock();
 		}
-		//道から外れていれば右旋回
-		else{
-			MoveRight();	//右
-		}
+	}
+	//道から外れていれば右に修正
+	else if(isRide[4]=='0' && isRide[5]=='0'){
+		MoveRight();
+	}
+	//道から外れていれば左に修正
+	else if(isRide[1]=='1' && isRide[2]=='0' && isRide[3]=='0'){
+		MoveLeft();
 	}
 	//真ん中2つ反応→前進
 	else if(isRide[3]=='0' && isRide[4]=='0'){
 		MoveStraight();
 	}
-	//右2つ反応
-	else if(isRide[4]=='0' && isRide[5]=='0'){
-		//右側3つ反応→右旋回
-		if(isRide[7]=='0'){
-			MoveRight();
-			*movingMode=1;
-			*start=clock();
-		}
-		//道から外れていれば左旋回
-		else{
-			MoveLeft();		//左
-		}
+	//右側3つ反応→右旋回
+	else if(isRide[4]=='0' && isRide[5]=='0' && isRide[6]=='0'){
+		MoveRight();
+		*movingMode=1;
+		*start=clock();
 	}
 	else{
 		Stop();
@@ -508,6 +492,63 @@ int GpioOpen(int n, char *file, int flag){
 
 	fd = open(buf, flag);
 	return fd;
+}
+
+/* 超音波センサ */
+//超音波センサのGPIOを有効化
+void SetSensorGpio(struct pollfd *pfd){
+	int fd;
+	
+	// gpioの有効化
+	GpioExport(SENSOR_GPIO_NUM);
+
+	//gpioを入力に設定
+	fd = GpioOpen(SENSOR_GPIO_NUM, "direction", O_WRONLY);
+	write(fd, "in", 2);
+	close(fd);
+	
+	// gpio を edge に設定
+	fd = GpioOpen(SENSOR_GPIO_NUM,"edge",O_WRONLY);
+	write(fd,"both",4);
+	close(fd);
+	
+	//gpioのvalueファイルを開く
+	fd = GpioOpen(SENSOR_GPIO_NUM, "value", O_RDONLY);
+
+	*pfd->fd = fd;
+	*pfd->events = POLLPRI;
+}
+
+//超音波センサの動作関数
+void SoundSensor(int fd,struct pollfd *pfd){
+	int Ion;
+	int ret, i;
+	char c;
+	struct timespec origin;
+	struct timespec now;
+
+	lseek(fd, 0, SEEK_SET); //読み取り位置先頭に設定
+	ret = poll(pfd, 1, -1); //通知を監視
+	read(fd, &c, 1); //通知状態読み込み
+	printf("c:%c\n",c);
+
+	if(c == '1'){ //パルスの立ち上がり時刻を取得
+		clock_gettime(CLOCK_MONOTONIC_RAW, &origin);
+	}
+	else return;
+
+	lseek(fd, 0, SEEK_SET);
+	ret = poll(pfd, 1, -1);
+	read(fd, &c, 1);
+
+	if(c == '0'){ //パルスの立下り時刻を取得
+		clock_gettime(CLOCK_MONOTONIC_RAW, &now);
+	}
+	else return;
+
+	Ion = RC_LAP(now, origin); //パルスのON時間算出
+	printf("interval=%d[sec]\n", Ion);
+	//usleep(500000);
 }
 
 /* ライントレーサ */
