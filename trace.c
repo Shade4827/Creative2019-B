@@ -16,7 +16,7 @@
 //モード変更
 /**************************/
 int MODE_GPIO_NUM=26;
-int SwitchMode(struct pollfd*);	//モード切替
+char SwitchMode();	//モード切替
 void AttackMode(char[],int*);	//攻撃側の行動関数
 void DeffenceMode(char[],int*,int*,clock_t*);	//防衛側の行動関数
 int IsProgress(double,clock_t*);	//時間経過を判定する関数
@@ -27,7 +27,7 @@ int IsProgress(double,clock_t*);	//時間経過を判定する関数
 #define OCP_NUM 3 //ocp.▲の▲に該当する番号
 #define PWM_PERIOD 10000000
 #define BONE_CAPEMGR_NUM 9 //bone_capemgr.●の●に該当char PIN_PWM[2][7]={{"P9_14"},{"P9_22"}}; //PWM有効化後の番号
-char PIN_PWM[2][7]={{"P9_14"},{"P9_22"}}; //PWM有効化後の番号
+char PIN_PWM[2][7]={{"P9_14"},{"P9_22"}}; //PWM有効化後の番号	0:左 1:右
 int PWM_PIN_NUM[2]={15,16}; //PWMに使用するのBBBピン番号
 int MOTOR_GPIO_NUM[2][2]={{61,60},{65,46}}; //モータで使用するGPIO番号=32×A+B(GPIO0_3→3)
 void InitPwm(int); //PWM初期化関数 motorNum=0もしくは1
@@ -44,9 +44,11 @@ int GpioOpen(int, char*, int);	//gpioの設定ファイルを開く関数
 
 //超音波センサ
 /**************************/
-int SENSOR_GPIO_NUM=20;
+int SENSOR_GPIO_NUM=44;
 void SetSensorGpio(struct pollfd*);	//超音波センサ用のGPIOを有効化
 void SoundSensor(int,struct pollfd*);	//超音波センサの動作関数
+//pulseのON時間を時間から算出(単位合わせ)
+#define RC_LAP(n,o) ((n.tv_sec - o.tv_sec)*1000000+(n.tv_nsec - o.tv_nsec)/1000)
 /**************************/
 
 //ライントレーサ
@@ -58,12 +60,15 @@ void IsRidingLine(int[],char[],int);	//ライントレーサの判定
 
 //移動関数
 /**************************/
-#define RIGHT1 10000000	//右旋回
-#define RIGHT2 1000000	//左旋回
-#define LEFT1 1000000	//右旋回
-#define LEFT2 10000000	//左旋回
+#define FAST 2000000	//速いduty
+#define SLOW 1350000	//遅いduty
+#define MAG 1.01
+#define MAG_C 3.0
+#define MAG_R 2.0
 void MoveRight();	//右旋回
 void MoveLeft();	//左旋回
+void FixRight();	//右修正
+void FixLeft();		//左修正
 void MoveStraight();	//直進
 void MoveBack();	//後退
 void Stop();	//停止
@@ -73,11 +78,13 @@ int main(){
 	int fd;
 	int i,lineNum=7;
 	char isRide[7];	//'0':白 '1':黒 7番:旋回フラグ 8番:後退フラグ
-	int movingMode=0;	//0:旋回しない 1:右旋回 -1:左旋回 2:攻撃→後退 防衛→スルー
+	//0:旋回しない 1:右旋回 -1:左旋回 
+	//2:右修正 -2:左修正 3:攻撃→後退 防衛→スルー
+	int movingMode=0;	
 	int startFlag=1;	//発射時のフラグ
 	int count=0;	//防衛時行動管理変数
 	clock_t start;
-	struct pollfd pfd;
+	//struct pollfd pfd;
 	
 	//モータを起動
 	InitPwm(0);
@@ -88,14 +95,12 @@ int main(){
 		GpioExport(LINE_GPIO_NUM[i]);
 	}
 
-	/* 攻守切り替え部分
-	int mode=SwitchMode(&pfd);	//攻守のモード 0:攻撃 1:防衛
-	*/
-
-	int mode=0;
+	// 攻守切り替え部分
+	//char mode=SwitchMode();	//攻守のモード 0:攻撃 1:防衛
+	char mode='0';
 
 	//超音波センサのGPIOを有効化
-	SetSensorGpio(&pfd);
+	//SetSensorGpio(&pfd);
 
 	while(1){
 		//ライントレーサによる判定
@@ -105,8 +110,6 @@ int main(){
 			printf("%c ",isRide[i]);
 		}
 		printf("\n");
-
-		SoundSensor(fd,&pfd);
 
 		//色付きマスから前進して抜け出す
 		if(startFlag==1){
@@ -118,11 +121,11 @@ int main(){
 			}
 		}
 		//攻撃モード
-		else if(mode==0){
+		else if(mode=='0'){
 			AttackMode(isRide,&movingMode);
 		}
 		//防衛モード
-		else if(mode==1){
+		else if(mode=='1'){
 			DeffenceMode(isRide,&movingMode,&count,&start);
 		}
 	}
@@ -137,46 +140,49 @@ int main(){
 
 /* モード変更 */
 //攻守切替
-int SwitchMode(struct pollfd *pfd){
-	int fd,org,mode;
+char SwitchMode(){
+	int fd;
+	char org,mode;
 	char path[60];
+	struct pollfd pfd;
 
 	GpioExport(MODE_GPIO_NUM);
 
-	//出力を設定
+	//入力に設定
 	fd=GpioOpen(MODE_GPIO_NUM, "direction", O_WRONLY);
 	write(fd, "in", 2);
 	close(fd);
 
-	fd=gpio_open(MODE_GPIO_NUM,"value",O_WRONLY);
+	fd=GpioOpen(MODE_GPIO_NUM,"edge",O_WRONLY);
     write(fd,"both",4);
     close(fd);
 
-    fd=gpio_open(MODE_GPIO_NUM,"value",O_WRONLY);
-    *pfd->fd=fd;
-    *pfd->events=POLLPRI;
+    fd=GpioOpen(MODE_GPIO_NUM,"value",O_RDONLY);
+    pfd.fd=fd;
+    pfd.events=POLLPRI;
 
-	org=poll(pfd,1,10000);
+	read(fd,&org,1);
+	mode=org;
 
     while(1){
         lseek(fd,0,SEEK_SET);
-        mode=poll(pfd,1,10000);
 
 		if(mode!=org){
+			close(fd);
 			GpioUnexport(MODE_GPIO_NUM);
 			break;
 		}
         
         read(fd,&mode,1);
     }
-
+	printf("\n");
 	return mode;
 }
 
 //攻撃側の行動関数
 void AttackMode(char isRide[],int *movingMode){
 	//後退
-	if(*movingMode==2){
+	if(*movingMode==3){
 		MoveBack();
 		if(isRide[5]=='0' && isRide[6]=='0'){
 			*movingMode=0;
@@ -184,9 +190,9 @@ void AttackMode(char isRide[],int *movingMode){
 		printf("back\n");
 	}
 	//右旋回
-	if(*movingMode==1){
+	else if(*movingMode==1){
 		MoveRight();
-		if(isRide[3]=='0' && isRide[4]=='0'){
+		if(isRide[2]=='0' && isRide[3]=='0'){
 			*movingMode=0;
 		}
 		printf("turning R\n");
@@ -194,43 +200,63 @@ void AttackMode(char isRide[],int *movingMode){
 	//左旋回
 	else if(*movingMode==-1){
 		MoveLeft();
-		if(isRide[3]=='0' && isRide[4]=='0'){
+		if(isRide[4]=='0' && isRide[5]=='0'){
 			*movingMode=0;
 		}
 		printf("turning L\n");
 	}
-	//反応なし→後退
-	if(isRide[0]=='1' && isRide[1]=='1' && isRide[2]=='1' && isRide[3]=='1'
-		&& isRide[4]=='1' && isRide[5]=='1' && isRide[6]=='1'){
-		MoveBack();
-		printf("back\n");
+	//右修正
+	else if(*movingMode==2){
+		FixRight();
+		if(isRide[3]=='0' && isRide[4]=='0'){
+			*movingMode=0;
+		}
+		printf("fixing R\n");
 	}
+	//左修正
+	else if(*movingMode==-2){
+		FixLeft();
+		if(isRide[3]=='0' && isRide[4]=='0'){
+			*movingMode=0;
+		}
+		printf("fixing L\n");
+	}
+	//反応なし→後退
+	//else if(isRide[0]=='1' && isRide[1]=='1' && isRide[2]=='1' && isRide[3]=='1'
+	//	&& isRide[4]=='1' && isRide[5]=='1' && isRide[6]=='1'){
+	//	MoveBack();
+	//	*movingMode=3;
+	//	printf("back\n");
+	//}
 	//右側3つ反応→右旋回
-	else if(isRide[4]=='0' && isRide[5]=='0' && isRide[6]=='0'){
+	else if(isRide[5]=='0' && isRide[6]=='0'){
 		MoveRight();
 		*movingMode=1;
-		printf("turn R1\n");
+		printf("turn R\n");
 	}
-	//道から外れていれば右に修正
+	//真ん中2つ反応→前進
+	else if((isRide[2]=='1' && isRide[3]=='0') 
+        || (isRide[4]=='0' && isRide[5]=='1')){
+		MoveStraight();
+		printf("Straight\n");
+    }
+	//左側3つ反応→左旋回
+	else if(isRide[0]=='0' && isRide[2]=='0'){
+		MoveLeft();
+		*movingMode=-1;
+		printf("turn L\n");
+	}
+    //道から外れていれば右に修正
 	else if(isRide[4]=='0' && isRide[5]=='0'){
-		MoveRight();
-		printf("turn R2\n");
+		FixRight();
+		*movingMode=2;
+		printf("fix R\n");
 	}
 	//道から外れていれば左に修正
 	else if(isRide[1]=='1' && isRide[2]=='0' && isRide[3]=='0'){
-		MoveLeft();
-		printf("turn L2\n");
-	}
-	//真ん中2つ反応→前進
-	else if(isRide[3]=='0' || isRide[4]=='0'){
-		MoveStraight();
-		printf("Straight\n");
-	}
-	//左側3つ反応→左旋回
-	else if(isRide[0]=='0' && isRide[2]=='0' && isRide[3]=='0'){
-		MoveLeft();
-		*movingMode=-1;
-		printf("turn L1\n");
+		FixLeft();
+		*movingMode=-2;
+		printf("fix L\n");
 	}
 	else{
 		Stop();
@@ -242,16 +268,16 @@ void AttackMode(char isRide[],int *movingMode){
 void DeffenceMode(char isRide[],int *movingMode,int *count,clock_t *start){
 	//前左左前右右フラグ前左ループ
 	//次の角まで直進
-	if(*movingMode==2){
+	if(*movingMode==3){
 		MoveStraight();
-		if(isRide[2]=='1' && isRide[3]=='1'){
+		if(isRide[2]=='0' && isRide[3]=='0'){
 			*movingMode==0;
 		}
 	}
 	//左旋回
 	if(*movingMode==-1){
 		MoveLeft();
-		if(isRide[3]=='0' && isRide[4]=='0'){
+		if(isRide[2]=='0' && isRide[3]=='0'){
 			*movingMode=0;
 			clock_t end=clock();
 			count+=IsProgress(2.0,start);
@@ -260,16 +286,30 @@ void DeffenceMode(char isRide[],int *movingMode,int *count,clock_t *start){
 	//右旋回
 	else if(*movingMode==1){
 		MoveRight();
+		if(isRide[4]=='0' && isRide[5]=='0'){
+			*movingMode=0;
+			count+=IsProgress(2.0,start);
+		}
+	}
+	//左修正
+	else if(*movingMode==-2){
+		if(isRide[3]=='0' && isRide[4]=='0'){
+			*movingMode=0;
+			count+=IsProgress(2.0,start);
+		}
+	}
+	//右修正
+	else if(*movingMode==2){
 		if(isRide[3]=='0' && isRide[4]=='0'){
 			*movingMode=0;
 			count+=IsProgress(2.0,start);
 		}
 	}
 	//左側3つ反応→左旋回
-	else if(isRide[0]=='0' && isRide[2]=='0' && isRide[3]=='0'){
+	else if(isRide[0]=='0' && isRide[2]=='0'){
 		//4回目ならばスルー
 		if(*count==4){
-			*movingMode=2;
+			*movingMode=3;
 		}
 		else{
 			MoveLeft();
@@ -277,23 +317,26 @@ void DeffenceMode(char isRide[],int *movingMode,int *count,clock_t *start){
 			*start=clock();
 		}
 	}
+	//真ん中2つ反応→前進
+	else if((isRide[2]=='1' && isRide[3]=='0') 
+        || (isRide[4]=='0' && isRide[5]=='1')){
+		MoveStraight();
+	}
+	//右側3つ反応→右旋回
+	else if(isRide[5]=='0' && isRide[6]=='0'){
+		MoveRight();
+		*movingMode=1;
+		*start=clock();
+	}
 	//道から外れていれば右に修正
 	else if(isRide[4]=='0' && isRide[5]=='0'){
 		MoveRight();
+		*movingMode=2;
 	}
 	//道から外れていれば左に修正
 	else if(isRide[1]=='1' && isRide[2]=='0' && isRide[3]=='0'){
 		MoveLeft();
-	}
-	//真ん中2つ反応→前進
-	else if(isRide[3]=='0' && isRide[4]=='0'){
-		MoveStraight();
-	}
-	//右側3つ反応→右旋回
-	else if(isRide[4]=='0' && isRide[5]=='0' && isRide[6]=='0'){
-		MoveRight();
-		*movingMode=1;
-		*start=clock();
+		*movingMode=-2;
 	}
 	else{
 		Stop();
@@ -515,8 +558,8 @@ void SetSensorGpio(struct pollfd *pfd){
 	//gpioのvalueファイルを開く
 	fd = GpioOpen(SENSOR_GPIO_NUM, "value", O_RDONLY);
 
-	*pfd->fd = fd;
-	*pfd->events = POLLPRI;
+	pfd->fd = fd;
+	pfd->events = POLLPRI;
 }
 
 //超音波センサの動作関数
@@ -566,26 +609,38 @@ void IsRidingLine(int gpioNum[],char c[],int n){
 /* 移動 */
 //右旋回
 void MoveRight(){
-	RunPwm(0,LEFT1,1);
-	RunPwm(1,RIGHT1,1);
+	RunPwm(0,FAST*MAG_C,1);
+	RunPwm(1,FAST*MAG_R,-1);
 }
 
 //左旋回
 void MoveLeft(){
-	RunPwm(0,LEFT2,1);
-	RunPwm(1,RIGHT2,1);
+	RunPwm(0,FAST*MAG_R,-1);
+	RunPwm(1,FAST*MAG_C,1);
+}
+
+//右修正
+void FixRight(){
+	RunPwm(0,FAST,1);
+	RunPwm(1,SLOW*MAG,1);
+}
+
+//左修正
+void FixLeft(){
+	RunPwm(0,SLOW,1);
+	RunPwm(1,FAST*MAG,1);
 }
 
 //前進
 void MoveStraight(){
-	RunPwm(0,LEFT2,1);
-	RunPwm(1,RIGHT1,1);
+	RunPwm(0,FAST,1);
+	RunPwm(1,FAST*MAG,1);
 }
 
 //後退
 void MoveBack(){
-	RunPwm(0,-LEFT2,1);
-	RunPwm(1,-RIGHT1,1);
+	RunPwm(0,SLOW,-1);
+	RunPwm(1,SLOW*MAG,-1);
 }
 
 //停止
