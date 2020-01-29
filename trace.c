@@ -17,7 +17,7 @@
 /**************************/
 int MODE_GPIO_NUM=26;
 char SwitchMode();	//モード切替
-void AttackMode(char[],int*);	//攻撃側の行動関数
+void AttackMode(char[],int*,clock_t*);	//攻撃側の行動関数
 void DeffenceMode(char[],int*,int*,clock_t*);	//防衛側の行動関数
 int IsProgress(double,clock_t*);	//時間経過を判定する関数
 /**************************/
@@ -60,11 +60,13 @@ void IsRidingLine(int[],char[],int);	//ライントレーサの判定
 
 //移動関数
 /**************************/
-#define FAST 2000000	//速いduty
-#define SLOW 1350000	//遅いduty
-#define MAG 1.01
-#define MAG_C 3.0
-#define MAG_R 2.0
+#define FAST 2000000	//速いduty 2000000
+#define SLOW 1300000	//遅いduty 1500000
+#define MAG 0.97
+#define MAG_C 1
+#define MAG_R 0.3
+double magR=1.0;
+double magL=1.0;
 void MoveRight();	//右旋回
 void MoveLeft();	//左旋回
 void FixRight();	//右修正
@@ -72,6 +74,7 @@ void FixLeft();		//左修正
 void MoveStraight();	//直進
 void MoveBack();	//後退
 void Stop();	//停止
+void MoveOver();
 /**************************/
 
 int main(){
@@ -113,16 +116,25 @@ int main(){
 
 		//色付きマスから前進して抜け出す
 		if(startFlag==1){
-			MoveStraight();
 			if(isRide[0]=='1' && isRide[1]=='1' && isRide[2]=='1' && isRide[3]=='0' 
 				&& isRide[4]=='0' && isRide[5]=='1' && isRide[6]=='1'){
 				startFlag=0;
-				printf("change\n");
+			}
+			//道から外れていれば右に修正
+			else if(isRide[3]=='1' && isRide[4]=='0' && isRide[5]=='0'){
+				FixRight();
+			}
+			//道から外れていれば左に修正
+			else if(isRide[2]=='0' && isRide[3]=='0' && isRide[4]=='1'){
+				FixLeft();
+			}
+			else{
+				MoveStraight();
 			}
 		}
 		//攻撃モード
 		else if(mode=='0'){
-			AttackMode(isRide,&movingMode);
+			AttackMode(isRide,&movingMode,&start);
 		}
 		//防衛モード
 		else if(mode=='1'){
@@ -180,11 +192,22 @@ char SwitchMode(){
 }
 
 //攻撃側の行動関数
-void AttackMode(char isRide[],int *movingMode){
-	//後退
+void AttackMode(char isRide[],int *movingMode,clock_t *start){
+	//旋回後の前進
 	if(*movingMode==3){
+		MoveStraight();
+		//通常走行にに変更
+		if((isRide[2]=='1' && isRide[3]=='0') 
+			|| (isRide[4]=='0' && isRide[5]=='1')){
+			*movingMode=-3;
+			*start=clock();
+		}
+		printf("fix straight\n");
+	}
+	//後退
+	else if(*movingMode==-3){
 		MoveBack();
-		if(isRide[5]=='0' && isRide[6]=='0'){
+		if(IsProgress(0.7,start)==1){
 			*movingMode=0;
 		}
 		printf("back\n");
@@ -192,32 +215,66 @@ void AttackMode(char isRide[],int *movingMode){
 	//右旋回
 	else if(*movingMode==1){
 		MoveRight();
-		if(isRide[2]=='0' && isRide[3]=='0'){
-			*movingMode=0;
+		if(isRide[4]=='0' && isRide[5]=='1'){
+			*movingMode=3;
+			magR=magL=1;
 		}
 		printf("turning R\n");
 	}
 	//左旋回
 	else if(*movingMode==-1){
 		MoveLeft();
-		if(isRide[4]=='0' && isRide[5]=='0'){
-			*movingMode=0;
+		if(isRide[2]=='1' && isRide[3]=='0'){
+			*movingMode=3;
+			magR=magL=1;
 		}
 		printf("turning L\n");
 	}
 	//右修正
 	else if(*movingMode==2){
 		FixRight();
-		if(isRide[3]=='0' && isRide[4]=='0'){
+		//条件が合えば右旋回に変更
+		if(isRide[5]=='0' && isRide[6]=='0'){
+			*movingMode=1;
+			if(isRide[2]=='0'){
+				magR=1.5;
+				magL=0.9;			
+				MoveOver();
+			}
+			else{
+				magR=1.2;
+				MoveOver();
+			}
+		}
+		//直進に変更
+		else if((isRide[2]=='1' && isRide[3]=='0') 
+			|| (isRide[4]=='0' && isRide[5]=='1')){
 			*movingMode=0;
+		}
+		else if(isRide[0]=='0' && isRide[2]=='0'){
+			*movingMode=-1;
+			magL=1.2;
 		}
 		printf("fixing R\n");
 	}
 	//左修正
 	else if(*movingMode==-2){
 		FixLeft();
-		if(isRide[3]=='0' && isRide[4]=='0'){
+		if(isRide[5]=='0' && isRide[6]=='0'){
+			*movingMode=1;
+			magR=1.2;
+			MoveOver();
+		}
+		//直線に変更
+		else if((isRide[2]=='1' && isRide[3]=='0') 
+			|| (isRide[4]=='0' && isRide[5]=='1')){
 			*movingMode=0;
+		}
+		//条件が合えば左旋回に変更
+		else if(isRide[0]=='0' && isRide[2]=='0'){
+			*movingMode=-1;
+			magL=1.2;
+			MoveOver();
 		}
 		printf("fixing L\n");
 	}
@@ -225,13 +282,15 @@ void AttackMode(char isRide[],int *movingMode){
 	//else if(isRide[0]=='1' && isRide[1]=='1' && isRide[2]=='1' && isRide[3]=='1'
 	//	&& isRide[4]=='1' && isRide[5]=='1' && isRide[6]=='1'){
 	//	MoveBack();
-	//	*movingMode=3;
+	//	*movingMode=-3;
 	//	printf("back\n");
 	//}
 	//右側3つ反応→右旋回
 	else if(isRide[5]=='0' && isRide[6]=='0'){
 		MoveRight();
 		*movingMode=1;
+		magR=0;
+		MoveOver();
 		printf("turn R\n");
 	}
 	//真ん中2つ反応→前進
@@ -244,6 +303,8 @@ void AttackMode(char isRide[],int *movingMode){
 	else if(isRide[0]=='0' && isRide[2]=='0'){
 		MoveLeft();
 		*movingMode=-1;
+		magL=0;
+		MoveOver();
 		printf("turn L\n");
 	}
     //道から外れていれば右に修正
@@ -253,7 +314,7 @@ void AttackMode(char isRide[],int *movingMode){
 		printf("fix R\n");
 	}
 	//道から外れていれば左に修正
-	else if(isRide[1]=='1' && isRide[2]=='0' && isRide[3]=='0'){
+	else if(isRide[2]=='0' && isRide[3]=='0'){
 		FixLeft();
 		*movingMode=-2;
 		printf("fix L\n");
@@ -346,7 +407,7 @@ void DeffenceMode(char isRide[],int *movingMode,int *count,clock_t *start){
 //時間経過を判定する関数
 int IsProgress(double time,clock_t *start){
 	clock_t end=clock();
-	if((double)(end-*start)/CLOCKS_PER_SEC>=2){
+	if((double)(end-*start)/CLOCKS_PER_SEC>=time){
 		*start=clock();
 		return 1;
 	}
@@ -609,14 +670,14 @@ void IsRidingLine(int gpioNum[],char c[],int n){
 /* 移動 */
 //右旋回
 void MoveRight(){
-	RunPwm(0,FAST*MAG_C,1);
-	RunPwm(1,FAST*MAG_R,-1);
+	RunPwm(0,FAST*MAG_C*magL,1);
+	RunPwm(1,SLOW*MAG_R*magR*MAG,-1);
 }
 
 //左旋回
 void MoveLeft(){
-	RunPwm(0,FAST*MAG_R,-1);
-	RunPwm(1,FAST*MAG_C,1);
+	RunPwm(0,SLOW*MAG_R*magL,1);
+	RunPwm(1,FAST*MAG_C*magR*MAG,1);
 }
 
 //右修正
@@ -639,12 +700,17 @@ void MoveStraight(){
 
 //後退
 void MoveBack(){
-	RunPwm(0,SLOW,-1);
-	RunPwm(1,SLOW*MAG,-1);
+	RunPwm(0,FAST,-1);
+	RunPwm(1,FAST*MAG,-1);
 }
 
 //停止
 void Stop(){
 	RunPwm(0,0,0);
 	RunPwm(1,0,0);
+}
+
+void MoveOver(){
+	RunPwm(0,PWM_PERIOD,1);
+	RunPwm(1,PWM_PERIOD,1);
 }
